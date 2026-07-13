@@ -29,6 +29,22 @@ bool CPlayer::moveToDestPosition(DWORD vid, fPoint& pos)
 	}
 }
 
+void CPlayer::setAttackTarget(DWORD vid)
+{
+	// Give NEW_Attack our mob as its attack target so it does the native move-to-attack + smooth face +
+	// attack (python player.SetTarget does not set this field). No PyObjects -> no refcount concern.
+	CMemory::Instance().setAttackTargetVID(vid);
+}
+
+void CPlayer::newAttack()
+{
+	// Animated attack via the client's own CPythonPlayer::NEW_Attack (faces + swings + battle packet,
+	// bow or melee per weapon). uBot sets the target + faces it; this drives the visible attack.
+	// No PyObjects created here -> no refcount concern; NEW_Attack self-guards outside the game world.
+	CMemory& mem = CMemory::Instance();
+	mem.callNewAttack();
+}
+
 void CPlayer::setPixelPosition(fPoint fPos)
 {
 	CNetworkStream& net = CNetworkStream::Instance();

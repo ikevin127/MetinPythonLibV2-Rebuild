@@ -41,11 +41,25 @@ public:
 	inline bool callRecvPacket(int size, void* buffer) { if(!recvHook->originalFunction) return false; return recvHook->originalFunction(getNetworkStream(), size, buffer); }
 
 	//Client functions
-	inline bool callSendAttackPacket(BYTE type, DWORD vid) { if(!sendAttackPacketHook->originalFunction) return false; return sendAttackPacketHook->originalFunction(getPythonNetwork(), type, vid); }
+	// Combat leaf senders: prefer the live CPythonNetworkStream 'this' captured by __CheckPacket
+	// (getNetworkStream(), proven correct) over the resolved NETWORKCLASS_POINTER global; fall back
+	// to the global if a packet hasn't been seen yet. Both SendAttackPacket and SendShootPacket are
+	// CPythonNetworkStream methods, so this 'this' is correct for both.
+	inline bool callSendAttackPacket(BYTE type, DWORD vid) { if(!sendAttackPacketHook->originalFunction) return false; ClassPointer self = getNetworkStream() ? getNetworkStream() : getPythonNetwork(); return sendAttackPacketHook->originalFunction(self, type, vid); }
+	inline bool callSendShootPacket(DWORD uSkill) { if(!sendShootFunc) return false; ClassPointer self = getNetworkStream() ? getNetworkStream() : getPythonNetwork(); return sendShootFunc(self, uSkill); }
+	inline bool callSendUseSkillPacket(DWORD dwSkillIndex, DWORD dwTargetVID) { if(!sendUseSkillPacketFunc) return false; ClassPointer self = getNetworkStream() ? getNetworkStream() : getPythonNetwork(); return sendUseSkillPacketFunc(self, dwSkillIndex, dwTargetVID); }
 	inline bool callGlobalToLocalPosition(long& lx, long& ly){ if(!globalToLocalFunc) return false; return globalToLocalFunc(getPythonNetwork(),lx,ly);}
 	inline bool callLocalToGlobalPosition(long& lx, long& ly) { if(!localToGlobalFunc) return false; return localToGlobalFunc(getPythonNetwork(), lx, ly); }
 	inline void* callGetInstancePointer(DWORD vid) { if(!getInstanceFunc) return 0; return getInstanceFunc(getInstanceClassPtr,vid); }
 	inline void callSendUseSkillBySlot(DWORD dwSkillSlotIndex, DWORD dwTargetVID) { if(!sendUseSkillBySlotFunc) return; return sendUseSkillBySlotFunc(getPythonPlayer(), dwSkillSlotIndex, dwTargetVID); }
+	// CPythonPlayer::NEW_Attack() -- the animated "hold Space" attack on the CPythonPlayer singleton.
+	// It self-guards (NEW_GetMainActorPtr null-check) so a call outside the game world is a safe no-op.
+	inline void callNewAttack() { if(!newAttackFunc) return; newAttackFunc(getPythonPlayer()); }
+	// Write CPythonPlayer+0x34B44 = the attack-target VID (CE-verified: the exact field CPythonPlayer::
+	// SetAttackTargetVID sets and NEW_Attack reads). python player.SetTarget does NOT set it, so NEW_Attack
+	// had no target -> attacked forward. Setting it makes NEW_Attack do its own native move-to-attack +
+	// smooth face + attack on our mob. Offset is a struct offset (ASLR-stable); guarded null.
+	inline void setAttackTargetVID(DWORD vid) { ClassPointer p = getPythonPlayer(); if(p) *(DWORD*)(p + 0x34B44) = vid; }
 	inline bool callPeek(int len, void*buffer) { if(!peekFunc) return false; return peekFunc(getNetworkStream(),len,buffer); }
 	//CEffectManager (main-thread / D3D; only call from the python / App::Process path). NULL-guarded so a missing sig no-ops.
 	inline bool callRegisterEffect(const char* fileName) { if(!registerEffectFunc || !getEffectManager()) return false; return registerEffectFunc(getEffectManager(), fileName, false, false) != 0; }
@@ -107,6 +121,9 @@ private:
 	//tSendAttackPacket		sendAttackPacketFunc;
 	tGetInstancePointer		getInstanceFunc;
 	tSendUseSkillBySlot		sendUseSkillBySlotFunc;
+	tSendShootPacket		sendShootFunc;
+	tSendUseSkillPacket		sendUseSkillPacketFunc;
+	tNewAttack				newAttackFunc;
 	tPeek					peekFunc;
 	tRegisterEffect			registerEffectFunc;
 	tCreateEffect			createEffectFunc;

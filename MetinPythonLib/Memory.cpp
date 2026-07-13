@@ -172,6 +172,9 @@ bool CMemory::setupPatterns(HMODULE hDll)
 
 	//sendAttackPacketFunc = (tSendAttackPacket)addrLoader.GetAddress(SENDATTACK_FUNCTION);
 	sendUseSkillBySlotFunc = (tSendUseSkillBySlot)addrLoader.GetAddress(PYTHONPLAYER_SENDUSESKILL);
+	sendShootFunc = (tSendShootPacket)addrLoader.GetAddress(SENDSHOOT_FUNCTION); // alive client leaf @ clean entry
+	sendUseSkillPacketFunc = (tSendUseSkillPacket)addrLoader.GetAddress(SENDUSESKILL_PACKET_FUNCTION); // alive network leaf (by skill index)
+	newAttackFunc = (tNewAttack)addrLoader.GetAddress(NEW_ATTACK_FUNCTION); // CPythonPlayer::NEW_Attack (animated attack)
 	localToGlobalFunc = (tLocalToGlobalPosition)addrLoader.GetAddress(LOCALTOGLOBAL_FUNCTION);
 	globalToLocalFunc = (tGlobalToLocalPosition)addrLoader.GetAddress(GLOBALTOLOCAL_FUNCTION);
 	peekFunc = (tPeek)addrLoader.GetAddress(PEEK_FUNCTION);

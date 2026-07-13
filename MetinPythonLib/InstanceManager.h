@@ -31,6 +31,9 @@ public:
 	bool getCharacterPosition(DWORD vid, fPoint3D* pos);
 	void* getInstancePtr(DWORD vid);
 	bool isInstanceDead(DWORD vid);
+	// mob race/vnum captured from the character-add packet (0 if unknown) -> uBot maps it to
+	// rank/level/category via mob_proto for the full auto-hunt attack filter.
+	inline DWORD getInstanceRace(DWORD vid) { auto it = instances.find(vid); return it != instances.end() ? it->second.wRaceNum : 0; }
 	inline PyObject* getVIDList() { return pyVIDList; };
 
 	//Pickup filter

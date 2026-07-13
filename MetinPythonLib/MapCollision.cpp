@@ -12,14 +12,13 @@
 #define ATTR_HEIGHT 256
 #define HEADER_SIZE 6
 
-
-
 MapCollision::MapCollision(const char* map_name){
 	maxX = 0;
 	maxY = 0;
 	mapName = std::string(map_name);
 	bool val = false;
-	if (!isMapSaved()) {
+	bool cached = isMapSaved();
+	if (!cached) {
 		val = constructMapFromClient();
 		if(val)
 			saveMap();
@@ -137,8 +136,21 @@ bool MapCollision::fileExists(const char * file)
 bool MapCollision::constructMapFromClient()
 {
 	std::vector<MapPiece*> buffer;
-	std::string baseFolder = mapName;
-	baseFolder += "\\";
+	// The client reads .atr from GetMapDataDirectory() = the (short) map name for normal maps. But copied
+	// dungeon instances use the PARENT name, and some client setups resolve maps under the ymir-work root.
+	// Try candidate base paths and use whichever the client's Eter (fileExists = app.IsExistFile) has.
+	const char* prefixes[] = { "", "d:/ymir work/map/", "map/", "d:\\ymir work\\map\\" };
+	std::string baseFolder;
+	bool baseFound = false;
+	for (int pi = 0; pi < 4; pi++) {
+		std::string cand = std::string(prefixes[pi]) + mapName + "\\";
+		std::string test = cand + "000000\\attr.atr";
+		bool ex = fileExists(test.c_str());
+		if (ex) { baseFolder = cand; baseFound = true; break; }
+	}
+	if (!baseFound) {
+		return false;
+	}
 	int counter = 0;
 	int xPieces = 0;
 	int largestYPiece = 1;

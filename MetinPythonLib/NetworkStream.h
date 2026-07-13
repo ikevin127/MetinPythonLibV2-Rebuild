@@ -45,6 +45,7 @@ public:
 
 	int GetCurrentPhase();
 	void forceGamePhase(); //walker build: set phase=GAME + load collision map without packet parsing
+	void reloadGamePhase(); //walker build: re-load collision map on world re-entry (teleport), phase already GAME
 	DWORD GetMainCharacterVID();
 	bool GlobalToLocalPosition(long& lx, long& ly);
 	bool LocalToGlobalPosition(LONG& rLocalX, LONG& rLocalY);

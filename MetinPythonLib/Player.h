@@ -24,6 +24,8 @@ public:
 	PyObject* GetEterPacket(PyObject* poSelf, PyObject* poArgs);
 	EterFile* CGetEter(const char* name);
 	bool  moveToDestPosition(DWORD vid, fPoint& pos);
+	void  newAttack();   // CPythonPlayer::NEW_Attack -- animated "hold Space" attack on the current target
+	void  setAttackTarget(DWORD vid);   // set CPythonPlayer+0x34B44 so NEW_Attack targets/faces this mob natively
 	void setPixelPosition(fPoint fPos);
 
 	BYTE getLastMovementType();

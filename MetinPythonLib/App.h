@@ -32,4 +32,6 @@ private:
 
 	bool mainScriptExec;
 	bool passed;
+	bool wasInGame;          // walker build: tracks isInGame() to detect world re-entry (channel switch)
+	std::string lastMap;     // walker build: last map name -- a change means a teleport/map warp
 };

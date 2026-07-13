@@ -72,7 +72,8 @@ void CInstanceManager::appendNewInstance(SRcv_PlayerCreatePacket& player)
 	instances[player.dwVID] = i;
 
 	PyObject* pVid = PyLong_FromLong(player.dwVID);
-	PyDict_SetItem(pyVIDList, pVid, pVid);
+	PyDict_SetItem(pyVIDList, pVid, pVid);   // SetItem INCREFs key + value; release our own ref
+	Py_DECREF(pVid);
 }
 
 void CInstanceManager::deleteInstance(DWORD vid)
@@ -82,7 +83,9 @@ void CInstanceManager::deleteInstance(DWORD vid)
 		return;
 	}
 	PyObject* pVid = PyLong_FromLong(vid);
-	PyDict_DelItem(pyVIDList, pVid);
+	if (PyDict_DelItem(pyVIDList, pVid) != 0)   // missing key sets a KeyError; swallow it
+		PyErr_Clear();
+	Py_DECREF(pVid);
 	instances.erase(vid);
 }
 

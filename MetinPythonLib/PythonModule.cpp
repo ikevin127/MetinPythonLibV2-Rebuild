@@ -49,6 +49,25 @@ PyObject* moveToDestPosition(PyObject* poSelf, PyObject* poArgs)
 	return Py_BuildNone();
 }
 
+// eXLib.NewAttack() -- fire the client's own animated attack (CPythonPlayer::NEW_Attack) on the
+// currently focused/targeted actor. uBot sets the target (nearest) + faces it, then calls this.
+PyObject* pyNewAttack(PyObject* poSelf, PyObject* poArgs)
+{
+	CPlayer::Instance().newAttack();
+	return Py_BuildNone();
+}
+
+// eXLib.SetAttackTarget(vid): set CPythonPlayer+0x34B44 so the next NewAttack targets + natively faces
+// this mob (python player.SetTarget does NOT set that field). Call right before NewAttack.
+PyObject* pySetAttackTarget(PyObject* poSelf, PyObject* poArgs)
+{
+	int vid = 0;
+	if (!PyTuple_GetInteger(poArgs, 0, &vid))
+		return Py_BuildException();
+	CPlayer::Instance().setAttackTarget((DWORD)vid);
+	return Py_BuildNone();
+}
+
 // ---- CEffectManager exposure (stone compass + general client-side effects) ----
 
 // Client GameUtil GetDegreeFromPosition: heading of (dx,dy) measured from -Y axis, clockwise, 0..360.
@@ -428,6 +447,18 @@ PyObject* pyIsDead(PyObject* poSelf, PyObject* poArgs)
 
 	CInstanceManager& mgr = CInstanceManager::Instance();
 	return Py_BuildValue("i", mgr.isInstanceDead(vid));
+}
+
+// eXLib.GetInstanceRace(vid) -> the mob's race/vnum (0 if unknown). uBot maps it to rank/level/category
+// via mob_proto for the auto-hunt attack filter (category 1-5 / Boss / level range).
+PyObject* pyGetInstanceRace(PyObject* poSelf, PyObject* poArgs)
+{
+	int vid;
+	if (!PyTuple_GetInteger(poArgs, 0, &vid))
+		return Py_BuildException();
+
+	CInstanceManager& mgr = CInstanceManager::Instance();
+	return Py_BuildValue("i", (int)mgr.getInstanceRace(vid));
 }
 
 
@@ -977,6 +1008,7 @@ static PyMethodDef s_methods[] =
 	{ "SendAttackPacket",		pySendAttackPacket,	METH_VARARGS },
 	{ "SendStatePacket",		pySendStatePacket,	METH_VARARGS },
 	{ "IsDead",					pyIsDead,			METH_VARARGS },
+	{ "GetInstanceRace",		pyGetInstanceRace,	METH_VARARGS },
 
 #ifdef _DEBUG
 	{ "LaunchPacketFilter",		launchPacketFilter,	METH_VARARGS },
@@ -1035,6 +1067,8 @@ static PyMethodDef s_methods[] =
 	//{ "SetAttackKeyState",		pySetKeyState,		METH_VARARGS },
 	{ "GetPixelPosition",		GetPixelPosition,	METH_VARARGS},
 	{ "MoveToDestPosition",     moveToDestPosition, METH_VARARGS},
+	{ "NewAttack",				pyNewAttack,		METH_VARARGS},
+	{ "SetAttackTarget",		pySetAttackTarget,	METH_VARARGS},
 	{ "SetMoveSpeedMultiplier",	pySetMoveSpeed,		METH_VARARGS},
 
 	{ "RegisterEffect",			pyRegisterEffect,		METH_VARARGS},
@@ -1079,7 +1113,12 @@ void initModule() {
 	DEBUG_INFO_LEVEL_1("eXLib module created");
 	//VMProtectEnd();
 
-	PyModule_AddObject(packet_mod, "InstancesList", CInstanceManager::Instance().getVIDList());
+	// PyModule_AddObject STEALS a reference; getVIDList() returns InstanceManager's own dict without
+	// incrementing, so without this INCREF the module and InstanceManager share one refcount and the
+	// dict can be freed while still in use (GC use-after-free). Keep both owners' references valid.
+	PyObject* vidList = CInstanceManager::Instance().getVIDList();
+	Py_XINCREF(vidList);
+	PyModule_AddObject(packet_mod, "InstancesList", vidList);
 	PyModule_AddStringConstant(packet_mod, "PATH", getDllPath());
 #ifdef _DEBUG
 	PyModule_AddIntConstant(packet_mod, "IS_DEBUG", 1);

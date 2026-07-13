@@ -15,7 +15,7 @@ bool isDebugEnable();
 void setDebugOn();
 void setDebugOff();
 
-#define SUBPATH_MAPS "Resources\\Maps\\"
+#define SUBPATH_MAPS "OpenBot\\Maps\\"
 
 #define ADRESS_FILE_NAME "addresses.csv"
 

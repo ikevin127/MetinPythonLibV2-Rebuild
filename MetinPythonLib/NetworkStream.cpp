@@ -86,12 +86,11 @@ bool CNetworkStream::SendAddFlyTargetingPacket(DWORD dwTargetVID, float x, float
 
 bool CNetworkStream::SendShootPacket(BYTE uSkill)
 {
-	SSend_ShootPacket packet;
-	packet.type = uSkill;
-
-	if (SendPacket(sizeof(SSend_ShootPacket), &packet))
-		return SendSequencePacket();
-	return false;
+	// Wire to the game's own alive SendShootPacket leaf (SENDSHOOT_FUNCTION, clean entry @ 0x...5230).
+	// The raw SEND path is psw_tnt-protected/dead on this GF build; the client leaf builds the packet,
+	// sends it, and runs SendSequence itself, so we just forward the skill id.
+	CMemory& mem = CMemory::Instance();
+	return mem.callSendShootPacket((DWORD)uSkill);
 }
 
 bool CNetworkStream::SendStartFishing(WORD direction)
@@ -128,14 +127,11 @@ bool CNetworkStream::SendPickupItemPacket(DWORD vid)
 
 bool CNetworkStream::SendUseSkillPacket(DWORD dwSkillIndex, DWORD dwTargetVID)
 {
-	SSend_UseSkillPacket packet;
-	packet.vid = dwTargetVID;
-	packet.dwSkillIndex = dwSkillIndex;
-	DEBUG_INFO_LEVEL_3("Sending Skill Packet index=%d, vid =%d", dwSkillIndex, dwTargetVID);
-	if (SendPacket(sizeof(SSend_UseSkillPacket), &packet))
-		return SendSequencePacket();
-
-	return false;
+	// Wire to the game's own alive SendUseSkillPacket leaf (SENDUSESKILL_PACKET_FUNCTION, clean entry).
+	// Raw SEND is psw_tnt-protected/dead on this GF build; the leaf builds TPacketCGUseSkill (header 0x4C),
+	// sends it, and runs SendSequence itself. Drives Skillbot's default "Cast instant" (by-index) path.
+	CMemory& mem = CMemory::Instance();
+	return mem.callSendUseSkillPacket(dwSkillIndex, dwTargetVID);
 }
 
 void CNetworkStream::SendUseSkillBySlot(DWORD dwSkillSlotIndex, DWORD dwTargetVID)
@@ -415,6 +411,18 @@ void CNetworkStream::forceGamePhase()
 	background.setCurrentCollisionMap();
 }
 
+void CNetworkStream::reloadGamePhase()
+{
+	// Called on world re-entry (teleport/map change). The phase is already GAME (packets are off so
+	// it never left), so forceGamePhase() would early-return without reloading -- do the reload here
+	// unconditionally so the walker's collision map matches the NEW map.
+	currentPhase = PHASE_GAME;
+	lastPointIsStored = false;
+	DEBUG_INFO_LEVEL_1("World re-entry: reloading collision map (walker build)");
+	CBackground& background = CBackground::Instance();
+	background.setCurrentCollisionMap();
+}
+
 DWORD CNetworkStream::GetMainCharacterVID()
 {
 	if (netMod == 0) {
@@ -481,6 +489,7 @@ bool CNetworkStream::setDigMotionCallback(PyObject* func)
 		if(recvDigMotionCallback)
 			Py_DECREF(recvDigMotionCallback);
 		recvDigMotionCallback = func;
+		Py_XINCREF(func); // own a ref: without it Python GC frees the stored callback -> use-after-free crash on reload
 		return true;
 	}
 	else {
@@ -507,6 +516,7 @@ bool CNetworkStream::setStartFishCallback(PyObject* func)
 		if (recvStartFishCallback)
 			Py_DECREF(recvStartFishCallback);
 		recvStartFishCallback = func;
+		Py_XINCREF(func); // own a ref (see setDigMotionCallback)
 		return true;
 	}
 	else {
@@ -526,6 +536,7 @@ bool CNetworkStream::setNewShopCallback(PyObject* func)
 	if (shopRegisterCallback)
 		Py_DECREF(shopRegisterCallback);
 	shopRegisterCallback = func;
+	Py_XINCREF(func); // own a ref (see setDigMotionCallback)
 
 	DEBUG_INFO_LEVEL_2("RegisterNewShopCallback function set sucessfully");
 
@@ -553,6 +564,7 @@ bool CNetworkStream::setChatCallback(PyObject* func)
 	if (chatCallback)
 		Py_DECREF(chatCallback);
 	chatCallback = func;
+	Py_XINCREF(func); // own a ref (see setDigMotionCallback)
 
 	DEBUG_INFO_LEVEL_2("ChatCallback function set sucessfully");
 
@@ -580,6 +592,7 @@ bool CNetworkStream::setRecvAddGrndItemCallback(PyObject* func)
 	if (recvAddGrndItemCallback)
 		Py_DECREF(recvAddGrndItemCallback);
 	recvAddGrndItemCallback = func;
+	Py_XINCREF(func); // own a ref (see setDigMotionCallback)
 
 	DEBUG_INFO_LEVEL_2("RecvAddGrndItemCallback function set sucessfully");
 
@@ -596,6 +609,7 @@ bool CNetworkStream::setRecvChangeOwnershipGrndItemCallback(PyObject* func)
 	if (recvChangeOwnershipGrndItemCallback)
 		Py_DECREF(recvChangeOwnershipGrndItemCallback);
 	recvChangeOwnershipGrndItemCallback = func;
+	Py_XINCREF(func); // own a ref (see setDigMotionCallback)
 
 	DEBUG_INFO_LEVEL_2("RecvChangeOwnershipGrndItemCallback function set sucessfully");
 
@@ -612,6 +626,7 @@ bool CNetworkStream::setRecvDelGrndItemCallback(PyObject* func)
 	if (recvDelGrndItemCallback)
 		Py_DECREF(recvDelGrndItemCallback);
 	recvDelGrndItemCallback = func;
+	Py_XINCREF(func); // own a ref (see setDigMotionCallback)
 
 	DEBUG_INFO_LEVEL_2("RecvDelGrndItemCallback function set sucessfully");
 

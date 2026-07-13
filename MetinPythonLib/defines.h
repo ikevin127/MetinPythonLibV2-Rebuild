@@ -42,6 +42,8 @@
 #define EFFECT_MANAGER_POINTER 25
 #define EFFECT_REGISTER_FUNCTION 26
 #define EFFECT_CREATE_FUNCTION 27
+#define SENDUSESKILL_PACKET_FUNCTION 28
+#define NEW_ATTACK_FUNCTION 29
 
 
 #define GLOBAL_PATTERN "\x55\x8b\xec\x83\xec\x00\x89\x4d\x00\xc6\x45\x00\x00\x8d\x45\x00\x50\x8b\x4d\x00\xe8\x00\x00\x00\x00\x0f\xb6\x00\x85\xc9\x75\x00\x32\xc0\xe9\x00\x00\x00\x00\x8b\x4d\x00\xe8\x00\x00\x00\x00\x0f\xb6\x00\x85\xd2\x75\x00\xb0\x00\xeb\x00\x8d\x45\x00\x89\x45\x00\x8b\x4d\x00\xc6\x01\x00\xba\x00\x00\x00\x00\x8b\x45\x00\x66\x89\x50\x00\x6a\x00\x6a\x00\x8d\x4d\x00\x51\xe8\x00\x00\x00\x00\x83\xc4\x00\xc6\x45\x00\x00\xc6\x45\x00\x00\x8b\x55"
@@ -69,6 +71,15 @@ typedef bool(__thiscall* tPeek)(ClassPointer classPointer, int len,void* buffer)
 typedef bool(__thiscall* tGlobalToLocalPosition)(ClassPointer classPointer, long& lx, long& ly);
 typedef bool(__thiscall* tLocalToGlobalPosition)(ClassPointer classPointer, LONG& rLocalX, LONG& rLocalY);
 typedef bool(__thiscall* tSendAttackPacket)(ClassPointer classPointer, BYTE type, DWORD vid);
+// Alive client leaf CPythonNetworkStream::SendShootPacket(UINT) @ SENDSHOOT_FUNCTION. The raw
+// SEND path is psw_tnt-protected/dead, so we call this leaf directly (it builds+sends+sequences).
+typedef bool(__thiscall* tSendShootPacket)(ClassPointer classPointer, DWORD uSkill);
+// Alive client leaf CPythonNetworkStream::SendUseSkillPacket(skillIndex, targetVID) @ SENDUSESKILL_PACKET_FUNCTION.
+typedef bool(__thiscall* tSendUseSkillPacket)(ClassPointer classPointer, DWORD dwSkillIndex, DWORD dwTargetVID);
+// CPythonPlayer::NEW_Attack() -- the "hold Space" attack. Handles bow (shoots current target) + melee
+// (faces-current-dir animated swing + battle packet) internally. 'this' = CPythonPlayer singleton.
+// RE'd sig @ NEW_ATTACK_FUNCTION (see Offsets.h). No args, no return.
+typedef void(__thiscall* tNewAttack)(ClassPointer classPointer);
 
 typedef void* (__thiscall* tGetInstancePointer)(ClassPointer classPointer, DWORD vid);
 typedef bool (__thiscall* tProcess)(ClassPointer classPointer);

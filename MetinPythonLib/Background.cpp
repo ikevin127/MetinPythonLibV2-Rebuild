@@ -59,13 +59,21 @@ void CBackground::freeCurrentMap()
 // force the game phase, since packet-based phase tracking is bypassed.
 bool CBackground::isInGame()
 {
+	return !currentMapName().empty();
+}
+
+std::string CBackground::currentMapName()
+{
 	if (!background_mod)
-		return false;
+		return std::string();
 	std::string map_name;
 	PyObject* poArgs = Py_BuildValue("()");
+	// PyCallClassMemberFunc consumes poArgs (Py_XDECREFs it internally) -- do NOT decref again, that
+	// double-frees the empty-tuple singleton (this is called every frame -> fast GC-corruption crash).
 	bool ok = PyCallClassMemberFunc(background_mod, "GetCurrentMapName", poArgs, map_name);
-	Py_XDECREF(poArgs);
-	return ok && !map_name.empty();
+	if (!ok)
+		return std::string();
+	return map_name;
 }
 
 bool CBackground::isBlockedPosition(int x, int y)
@@ -162,8 +170,8 @@ bool CBackground::isPathBlocked(int x_start, int y_start, int x_end, int y_end)
 				int y_min = min(y_end, y_start);
 				int y_max = max(y_end, y_start);
 #else
-				int y_min = std::min(y_end, y_start);
-				int y_max = std::max(y_end, y_start);
+				int y_min = (std::min)(y_end, y_start);
+				int y_max = (std::max)(y_end, y_start);
 #endif
 				for (int iy = y_min; iy <= y_max; iy++) {
 					if (currMap->isBlocked(x_start, iy)) {
