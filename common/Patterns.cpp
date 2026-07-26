@@ -17,27 +17,21 @@ bool Patterns::Init(Pattern* modulePattern) {
 			throw std::runtime_error("Error setting module");
 	}
 	else {
-		mInfo.lpBaseOfDll = 0;
-		mInfo.SizeOfImage = 0x7FFFFFFF;
-		DWORD result = FindPattern(modulePattern->pattern, modulePattern->mask);
-
-		if (result) {
-			MEMORY_BASIC_INFORMATION mi;
-			int size = VirtualQuery((LPCVOID)result, &mi, sizeof(mi));
-			mInfo.EntryPoint = 0;
-			mInfo.lpBaseOfDll = mi.AllocationBase;
-			mInfo.SizeOfImage = mi.RegionSize + ((DWORD)mi.BaseAddress - (DWORD)mi.AllocationBase);
-			if (mi.State & MEM_FREE) {
-				throw std::runtime_error("Memory location for pattern search is not allocated");
-			}
-
-			if (!(mi.AllocationProtect & PAGE_EXECUTE || mi.AllocationProtect & PAGE_EXECUTE_READ || mi.AllocationProtect & PAGE_EXECUTE_READWRITE || mi.AllocationProtect & PAGE_EXECUTE_WRITECOPY)) {
-				DEBUG_INFO_LEVEL_1("ATTENTION location for pattern search is not executable.");
-			}
-		}
-		else {
-			throw std::runtime_error("Pattern not found in entire memory space!");
-		}
+		// LAUNCH-CRASH FIX (client 26.1.11): the old path set SizeOfImage = 0x7FFFFFFF and scanned the ENTIRE
+		// 0..2GB address space for GLOBAL_PATTERN just to LOCATE the host module. That whole-address-space walk
+		// reads across arbitrary region boundaries and faults (0xC0000005 at ~0x15270000) on the new client's
+		// rearranged layout. The host module is simply the main executable: GetModuleHandle(NULL) gives its base
+		// and the PE OptionalHeader.SizeOfImage bounds the scan exactly to metin2client.exe -- no giant scan, and
+		// every real signature lives inside this range anyway. (modulePattern is now unused; kept for ABI.)
+		(void)modulePattern;
+		HMODULE hExe = GetModuleHandle(NULL);
+		if (!hExe)
+			throw std::runtime_error("GetModuleHandle(NULL) failed locating host module");
+		IMAGE_DOS_HEADER* dos = (IMAGE_DOS_HEADER*)hExe;
+		IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)((BYTE*)hExe + dos->e_lfanew);
+		mInfo.EntryPoint = 0;
+		mInfo.lpBaseOfDll = (LPVOID)hExe;
+		mInfo.SizeOfImage = nt->OptionalHeader.SizeOfImage;
 	}
 
 	DEBUG_INFO_LEVEL_1("Module start address: %x\nModule Size:%x", mInfo.lpBaseOfDll, mInfo.SizeOfImage);
@@ -71,8 +65,14 @@ DWORD Patterns::FindPattern(const char *pattern, const char *mask)
 					//printf("Permission info %#x\n", PermInfo.Protect);
 					//printf("State info %#x\n", PermInfo.State);
 					//system("pause");
-					if ((PermInfo.State == MEM_RESERVE )|| PermInfo.Protect & PAGE_NOACCESS || PermInfo.Protect & PAGE_GUARD) {
-						pageEndAddr += PermInfo.RegionSize;
+					if ((PermInfo.State != MEM_COMMIT) || PermInfo.Protect & PAGE_NOACCESS || PermInfo.Protect & PAGE_GUARD) {
+						// BUGFIX (launch crash on client 26.1.11): the region END is BaseAddress + RegionSize, NOT a
+						// running "pageEndAddr += RegionSize". When VirtualQuery's BaseAddress < indexAddr the running
+						// total overshoots -> pageEndAddr lands past the mapped range -> the boundary check at line ~90
+						// passes -> the compare loop reads *(indexAddr+j) into an unmapped page -> 0xC0000005. The
+						// larger/rearranged 26.1.11 layout (plus the now-unmatchable sigs scanning the whole module)
+						// makes an unreadable region follow a committed one at exactly the offending boundary.
+						pageEndAddr = (DWORD)PermInfo.BaseAddress + PermInfo.RegionSize;
 						indexAddr = pageEndAddr;
 						continue;
 					}

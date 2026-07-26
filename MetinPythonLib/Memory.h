@@ -26,6 +26,7 @@ public:
 	inline ClassPointer getNetworkStream() { return networkStream; };
 	inline void setNetworkStream(ClassPointer val) {networkStream=val; };
 	inline ClassPointer getEffectManager() { return effectManagerPointer ? *effectManagerPointer : 0; };
+	int GetDialogAnswerCount();   // # options in the current NPC dialog (max TEventSet.nAnswer); 0 if none, -1 if unresolved
 
 	//Hooked original functions  (walker build: NULL-guarded so dead-sig features no-op instead of calling NULL)
 	inline bool callBackgroundCheckAdv(ClassPointer p,void* instanceBase) { if(!backgroundCheckAdvHook->originalFunction) return true; return backgroundCheckAdvHook->originalFunction(p, instanceBase);}
@@ -128,6 +129,7 @@ private:
 	tRegisterEffect			registerEffectFunc;
 	tCreateEffect			createEffectFunc;
 	ClassPointer*			effectManagerPointer;
+	DWORD*					eventMgrStatic;   // CPythonEventManager singleton pointer (module base + RVA 0x2DC1760)
 
 	ClassPointer* pythonNetwork;
 	ClassPointer* pythonChrMgr;

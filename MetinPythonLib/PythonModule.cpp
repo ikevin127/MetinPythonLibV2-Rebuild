@@ -240,8 +240,11 @@ PyObject* FindPath(PyObject* poSelf, PyObject* poArgs)
 	bool val = false;
 	if (x_start_unblocked != -1) {
 		val = bck.findPath(x_start_unblocked, y_start_unblocked, x_end, y_end, path);
-		if (val)
-			PyList_Append(pList, Py_BuildValue("ii", x_start_unblocked * 100, y_start_unblocked * 100));
+		if (val) {
+			PyObject* startObj = Py_BuildValue("ii", x_start_unblocked * 100, y_start_unblocked * 100);
+			PyList_Append(pList, startObj);   // Append INCREFs -> release our own ref or it leaks into gen-0
+			Py_XDECREF(startObj);
+		}
 		else
 			return pList;
 	}
@@ -253,10 +256,10 @@ PyObject* FindPath(PyObject* poSelf, PyObject* poArgs)
 	if (!val) {
 		return pList;
 	}
-	int i = 0;
 	for (Point& p : path) {
 		PyObject* obj = Py_BuildValue("ii", p.x * 100, p.y * 100);
-		PyList_Append(pList, obj);
+		PyList_Append(pList, obj);   // Append INCREFs the tuple -> release our creation ref or it leaks
+		Py_XDECREF(obj);
 	}
 
 	return pList;
@@ -996,9 +999,16 @@ static std::set<std::string> premium_methods =
 	std::string("UnskipRenderer")
 };
 
+// # options in the current NPC dialog (2-option "Open Shop / Close" -> 2). 0 = no menu, -1 = unresolved.
+PyObject* pyGetDialogAnswerCount(PyObject* poSelf, PyObject* poArgs)
+{
+	return Py_BuildValue("i", CMemory::Instance().GetDialogAnswerCount());
+}
+
 static PyMethodDef s_methods[] =
 {
 	{ "Get",					GetEterPacket,		METH_VARARGS },
+	{ "GetDialogAnswerCount",	pyGetDialogAnswerCount, METH_VARARGS },
 	{ "IsPathBlocked",			pyIsPathBlocked,	METH_VARARGS },
 	{ "IsPositionBlocked",		IsPositionBlocked,	METH_VARARGS },
 	{ "GetAttrByte",			GetAttrByte,		METH_VARARGS },

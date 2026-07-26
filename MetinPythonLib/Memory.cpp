@@ -184,6 +184,15 @@ bool CMemory::setupPatterns(HMODULE hDll)
 	createEffectFunc = (tCreateEffect)getRelativeCallAddress(addrLoader.GetAddress(EFFECT_CREATE_FUNCTION));
 	effectManagerPointer = SetClassPointer((DWORD**)addrLoader.GetAddress(EFFECT_MANAGER_POINTER));
 
+	// CPythonEventManager singleton pointer. AOB is not viable (the 2-int-arg python-wrapper shape
+	// that loads it matches ~21 funcs across modules; only the operand differs), so resolve by module
+	// base + RVA. Absolute this-run 0x03741760 @ base 0x00980000 -> RVA 0x2DC1760 (ASLR-stable). Used
+	// by GetDialogAnswerCount to read the current NPC-dialog option count (TEventSet.nAnswer).
+	// BUGFIX: the RVA is into metin2client.exe, but hDll is eXLib.mix's OWN base (this DLL) -> hDll+RVA
+	// lands ~47MB past our ~480KB module in unrelated memory and reads 0. Use the MAIN EXE base instead.
+	// (Verified live via CE: exeBase+0x2DC1760 -> valid singleton whose m_EventSetVector has 6 slots.)
+	eventMgrStatic = (DWORD*)((DWORD)GetModuleHandle(NULL) + 0x02DC1760);
+
 	//peekFunc = (tPeek)getRelativeCallAddress((void*)peekFunc); // walker build: PEEK_FUNCTION is now a direct function sig (offset 0), not a call site
 	globalToLocalFunc = (tGlobalToLocalPosition)getRelativeCallAddress((void*)globalToLocalFunc);
 	recvAddr = getRelativeCallAddress(recvAddr);
@@ -204,6 +213,39 @@ bool CMemory::setupPatterns(HMODULE hDll)
 
 	getInstanceFunc = reinterpret_cast<tGetInstancePointer>(*(DWORD*)(*(DWORD*)getInstanceClassPtr + OFFSET_CLIENT_INSTANCE_PTR_2));
 	return true;
+}
+
+// Number of selectable options in the CURRENTLY-OPEN NPC dialog. Walks the CPythonEventManager singleton's
+// m_EventSetVector (@ mgr+0x0C: begin@+0x00, end@+0x04) and returns the MAX TEventSet.nAnswer (@ es+0x1B0)
+// across all live event sets -- the interactive menu has answers>0 while quest/info scrolls are 0, so the
+// max auto-selects the menu. Verified live: a 2-option "Open Shop / Close" menu reads 2. SEH-guarded so a
+// bad/absent struct returns -1 instead of crashing. (POD-only body -> __try is legal here.)
+int CMemory::GetDialogAnswerCount()
+{
+	if (!eventMgrStatic)
+		return -1;
+	__try {
+		DWORD mgr = *eventMgrStatic;                 // singleton `this`
+		if (!mgr)
+			return 0;
+		DWORD* begin = *(DWORD**)(mgr + 0x0C);       // m_EventSetVector.begin
+		DWORD* end   = *(DWORD**)(mgr + 0x10);       // m_EventSetVector.end
+		if (!begin || end < begin)
+			return 0;
+		int maxN = 0, guard = 0;
+		for (DWORD* p = begin; p < end && guard < 256; ++p, ++guard) {
+			DWORD es = *p;
+			if (es) {
+				int n = *(int*)(es + 0x1B0);         // TEventSet.nAnswer
+				if (n > 0 && n < 64 && n > maxN)
+					maxN = n;
+			}
+		}
+		return maxN;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return -1;
+	}
 }
 
 bool CMemory::setupHooks()

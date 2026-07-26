@@ -120,16 +120,14 @@ bool MapCollision::isMapSaved()
 bool MapCollision::fileExists(const char * file)
 {
 	PyObject * mod = PyImport_ImportModule("app");
-	PyObject * poArgs = Py_BuildValue("(s)",file);
 	long ret = 0;
 
-	if (PyCallClassMemberFunc(mod, "IsExistFile", poArgs, &ret)) {
+	// CallMethodRetLong builds+owns the (s) args tuple internally -> no manual refcount to double-free.
+	if (CallMethodRetLong(mod, "IsExistFile", &ret, "(s)", file)) {
 		Py_DECREF(mod);
-		Py_DECREF(poArgs);
-		return ret;
+		return ret != 0;
 	}
 	Py_DECREF(mod);
-	Py_DECREF(poArgs);
 	return false;
 }
 

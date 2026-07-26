@@ -29,6 +29,22 @@ bool PyCallClassMemberFunc(PyObject* poClass, const char* c_szFunc, PyObject* po
 bool PyCallClassMemberFunc_ByPyString(PyObject* poClass, PyObject* poFuncName, PyObject* poArgs);
 bool PyCallClassMemberFunc(PyObject* poClass, PyObject* poFunc, PyObject* poArgs);
 
+// ============================================================================================
+// PREFER THESE for any new eXLib->Python call. They are self-contained: they build the args from
+// (fmt, ...), call obj.method(*args), and release EVERY PyObject (fn, args, result) INTERNALLY --
+// the caller never touches a refcount, so the double-free/double-decref crash class (empty-tuple
+// UAF etc.) is structurally impossible. Pass "" as fmt for a no-arg call. Do NOT hand-build a tuple
+// or pair these with Py_BuildValue -- that reintroduces the manual-refcount foot-gun the raw
+// PyCallClassMemberFunc has.
+//   CallMethod(obj, "Method", "");                 // obj.Method()
+//   CallMethod(obj, "Method", "(iii)", a, b, c);   // obj.Method(a, b, c)  (result discarded)
+//   long v; CallMethodRetLong(obj, "M", &v, "(s)", name);
+//   std::string s; CallMethodRetStr(obj, "GetName", s, "");
+// ============================================================================================
+bool CallMethod(PyObject* obj, const char* method, const char* fmt, ...);
+bool CallMethodRetLong(PyObject* obj, const char* method, long* out, const char* fmt, ...);
+bool CallMethodRetStr(PyObject* obj, const char* method, std::string& out, const char* fmt, ...);
+
 PyObject * Py_BuildException(const char * c_pszErr = NULL, ...);
 PyObject * Py_BadArgument();
 PyObject * Py_BuildNone();

@@ -5,6 +5,79 @@ bool __PyCallClassMemberFunc_ByCString(PyObject* poClass, const char* c_szFunc, 
 bool __PyCallClassMemberFunc_ByPyString(PyObject* poClass, PyObject* poFuncName, PyObject* poArgs, PyObject** poRet);
 bool __PyCallClassMemberFunc(PyObject* poClass, PyObject* poFunc, PyObject* poArgs, PyObject** poRet);
 
+// ---- Self-contained method-call helpers (see PythonUtils.h). Own EVERY PyObject internally so a caller
+// can never double-free the args -> the empty-tuple UAF / GC-corruption crash class is impossible here.
+static PyObject* __BuildCallArgs(const char* fmt, va_list ap)
+{
+	if (!fmt || fmt[0] == '\0')
+		return PyTuple_New(0);              // our own ref to the empty tuple; balanced by the caller's decref
+	PyObject* a = Py_VaBuildValue(fmt, ap); // new ref
+	if (!a)
+		return NULL;
+	if (!PyTuple_Check(a)) {                 // a single non-tuple value -> wrap it in a 1-tuple
+		PyObject* t = PyTuple_New(1);
+		PyTuple_SetItem(t, 0, a);           // steals a's ref
+		return t;
+	}
+	return a;
+}
+
+static PyObject* __CallMethodRaw(PyObject* obj, const char* method, const char* fmt, va_list ap)
+{
+	if (!obj)
+		return NULL;
+	PyObject* fn = PyObject_GetAttrString(obj, method);   // new ref
+	if (!fn) { PyErr_Clear(); return NULL; }
+	if (!PyCallable_Check(fn)) { Py_DECREF(fn); return NULL; }
+	PyObject* args = __BuildCallArgs(fmt, ap);
+	if (!args) { Py_DECREF(fn); PyErr_Clear(); return NULL; }
+	PyObject* ret = PyObject_CallObject(fn, args);        // new ref or NULL
+	Py_DECREF(args);
+	Py_DECREF(fn);
+	if (!ret) { PyErr_Clear(); return NULL; }
+	return ret;   // caller decrefs
+}
+
+bool CallMethod(PyObject* obj, const char* method, const char* fmt, ...)
+{
+	va_list ap; va_start(ap, fmt);
+	PyObject* ret = __CallMethodRaw(obj, method, fmt, ap);
+	va_end(ap);
+	if (!ret) return false;
+	Py_DECREF(ret);
+	return true;
+}
+
+bool CallMethodRetLong(PyObject* obj, const char* method, long* out, const char* fmt, ...)
+{
+	va_list ap; va_start(ap, fmt);
+	PyObject* ret = __CallMethodRaw(obj, method, fmt, ap);
+	va_end(ap);
+	if (!ret) return false;
+	if (out) {
+		if (PyInt_Check(ret))       *out = PyInt_AsLong(ret);
+		else if (PyLong_Check(ret)) *out = PyLong_AsLong(ret);
+		else if (PyBool_Check(ret)) *out = (ret == Py_True) ? 1 : 0;
+		else                        *out = 0;
+	}
+	Py_DECREF(ret);
+	return true;
+}
+
+bool CallMethodRetStr(PyObject* obj, const char* method, std::string& out, const char* fmt, ...)
+{
+	va_list ap; va_start(ap, fmt);
+	PyObject* ret = __CallMethodRaw(obj, method, fmt, ap);
+	va_end(ap);
+	if (!ret) return false;
+	if (PyString_Check(ret)) {
+		const char* s = PyString_AsString(ret);
+		out = s ? s : "";
+	}
+	Py_DECREF(ret);
+	return true;
+}
+
 PyObject * Py_BadArgument()
 {
 	PyErr_BadArgument();
@@ -216,7 +289,7 @@ bool PyCallClassMemberFunc(PyObject* poClass, PyObject* poFunc, PyObject* poArgs
 {
 	PyObject* poRet;
 
-	// NOTE : NULL Ã¼Å© Ãß°¡.. - [levites]
+	// NOTE : NULL Ã¼Å© ï¿½ß°ï¿½.. - [levites]
 	if (!poClass)
 	{
 		Py_XDECREF(poArgs);
@@ -235,7 +308,7 @@ bool PyCallClassMemberFunc(PyObject* poClass, const char* c_szFunc, PyObject* po
 {
 	PyObject* poRet;
 
-	// NOTE : NULL Ã¼Å© Ãß°¡.. - [levites]
+	// NOTE : NULL Ã¼Å© ï¿½ß°ï¿½.. - [levites]
 	if (!poClass)
 	{
 		Py_XDECREF(poArgs);
@@ -253,7 +326,7 @@ bool PyCallClassMemberFunc_ByPyString(PyObject* poClass, PyObject* poFuncName, P
 {
 	PyObject* poRet;
 
-	// NOTE : NULL Ã¼Å© Ãß°¡.. - [levites]
+	// NOTE : NULL Ã¼Å© ï¿½ß°ï¿½.. - [levites]
 	if (!poClass)
 	{
 		Py_XDECREF(poArgs);
@@ -320,9 +393,9 @@ bool PyCallClassMemberFunc(PyObject* poClass, const char* c_szFunc, PyObject* po
 }
 
 /*
- *	ÀÌ ÇÔ¼ö¸¦ Á÷Á¢ È£ÃâÇÏÁö ¾Êµµ·Ï ÇÑ´Ù.
- *	ºÎµæÀÌ ÇÏ°Ô Á÷Á¢ È£ÃâÇÒ °æ¿ì¿¡´Â ¹Ýµå½Ã false °¡ ¸®ÅÏ µÆÀ» ¶§
- *	Py_DECREF(poArgs); ¸¦ ÇØÁØ´Ù.
+ *	ï¿½ï¿½ ï¿½Ô¼ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ È£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Êµï¿½ï¿½ï¿½ ï¿½Ñ´ï¿½.
+ *	ï¿½Îµï¿½ï¿½ï¿½ ï¿½Ï°ï¿½ ï¿½ï¿½ï¿½ï¿½ È£ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ì¿¡ï¿½ï¿½ ï¿½Ýµï¿½ï¿½ false ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½ ï¿½ï¿½
+ *	Py_DECREF(poArgs); ï¿½ï¿½ ï¿½ï¿½ï¿½Ø´ï¿½.
  */
 bool __PyCallClassMemberFunc_ByCString(PyObject* poClass, const char* c_szFunc, PyObject* poArgs, PyObject** ppoRet)
 {

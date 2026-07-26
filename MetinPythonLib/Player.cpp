@@ -49,16 +49,12 @@ void CPlayer::setPixelPosition(fPoint fPos)
 {
 	CNetworkStream& net = CNetworkStream::Instance();
 	DWORD actor = net.GetMainCharacterVID();
-	PyObject* poArgs_select = Py_BuildValue("(i)", actor);
-	PyObject* poArgs = Py_BuildValue("(iii)", (int)fPos.x, (int)fPos.y, actor);
 	long ret = 0;
 
 	DEBUG_INFO_LEVEL_3("SetPixelPosition x->%d, y->%d vid->%d", (int)fPos.x, (int)fPos.y, (int)actor);
-	PyCallClassMemberFunc(chr_mod, "SelectInstance", poArgs_select, &ret);
-
-	PyCallClassMemberFunc(chr_mod, "SetPixelPosition", poArgs, &ret);
-	Py_DECREF(poArgs_select);
-	Py_DECREF(poArgs);
+	// CallMethodRetLong builds+owns each args tuple internally -> no manual refcount to double-free.
+	CallMethodRetLong(chr_mod, "SelectInstance", &ret, "(i)", (int)actor);
+	CallMethodRetLong(chr_mod, "SetPixelPosition", &ret, "(iii)", (int)fPos.x, (int)fPos.y, (int)actor);
 }
 
 BYTE CPlayer::getLastMovementType()
@@ -74,9 +70,8 @@ fPoint CPlayer::getLastDestPosition()
 std::string CPlayer::getPlayerName()
 {
 	std::string result;
-	if (!PyCallClassMemberFunc(player_mod, "GetName", Py_BuildValue("()"),result)) {
+	if (!CallMethodRetStr(player_mod, "GetName", result, ""))   // self-contained (see PythonUtils.h)
 		return "";
-	}
 	return result;
 }
 
@@ -94,10 +89,13 @@ PyObject* CPlayer::GetEterPacket(PyObject* poSelf, PyObject* poArgs)
 	eterFile.name = std::string(szFileName);
 
 	getTrigger = true;
+	// poArgs is the BORROWED python-arg tuple (owned by our caller). PyCallClassMemberFunc CONSUMES it
+	// (decref), so INCREF first to keep the caller's reference balanced, and do NOT decref it again below
+	// (the old code did both consume + Py_DECREF -> -2 on a borrowed tuple -> heap corruption).
+	Py_INCREF(poArgs);
 	PyCallClassMemberFunc(mod, "OpenTextFile", poArgs);
 	getTrigger = false;
 
-	Py_DECREF(poArgs);
 	Py_DECREF(mod);
 	Py_DECREF(szFileName);
 

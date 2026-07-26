@@ -320,7 +320,13 @@ bool CNetworkStream::__CheckPacket(BYTE * header)
 	// the client floods us with clear + character add/del + phase packets; doing that
 	// work without holding the GIL, or leaving a stray Python error set, corrupts the
 	// interpreter and crashes inside python27.dll (0xc0000005) on world reload.
-	PyGILState_STATE __gil = PyGILState_Ensure();
+	extern bool ExToggle_PacketGil();            // App.cpp -- runtime bisect toggles (exlib_toggles.txt)
+	extern bool ExToggle_CheckPacket();
+	if (!ExToggle_CheckPacket())                 // checkpacket=0 -> skip ALL our packet processing (InstancesList
+		return val;                              // + callbacks) to bisect the teleport UAF. Entity detection dies.
+	const bool __useGil = ExToggle_PacketGil();
+	PyGILState_STATE __gil;
+	if (__useGil) __gil = PyGILState_Ensure();
 
 	DEBUG_INFO_LEVEL_5("Hook CheckPacket header=%d", *header);
 
@@ -366,7 +372,7 @@ bool CNetworkStream::__CheckPacket(BYTE * header)
 	// game's own Python on the next packet, then release the GIL we took above.
 	if (PyErr_Occurred())
 		PyErr_Clear();
-	PyGILState_Release(__gil);
+	if (__useGil) PyGILState_Release(__gil);
 	return val;
 }
 
@@ -429,19 +435,15 @@ DWORD CNetworkStream::GetMainCharacterVID()
 		DEBUG_INFO_LEVEL_3("Net Module has not been loaded!");
 	}
 	//return mainCharacterVID;
-	PyObject* poArgs = Py_BuildValue("()");
 	long ret = 0;
 
 	if (netMod == 0) {
 		return 0;
 	}
 
-	if (PyCallClassMemberFunc(netMod, "GetMainActorVID", poArgs, &ret)) {
-		Py_DECREF(poArgs);
-		return ret;
-	}
-
-	Py_DECREF(poArgs);
+	// CallMethodRetLong owns the empty-tuple args internally -> the drain that WAS the root-cause crash
+	// (GetMainActorVID doesn't exist on this GF build, so this ran every call) is now structurally impossible.
+	CallMethodRetLong(netMod, "GetMainActorVID", &ret, "");
 	return ret;
 }
 

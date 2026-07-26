@@ -25,18 +25,15 @@ void CBackground::importPython()
 bool CBackground::setCurrentCollisionMap()
 {
 	std::string map_name;
-	PyObject* poArgs = Py_BuildValue("()");
-
-	if (!PyCallClassMemberFunc(background_mod, "GetCurrentMapName", poArgs, map_name)) {
+	// CallMethod* owns all refcounts internally -> no empty-tuple double-free possible (this runs on every
+	// world reload). See PythonUtils.h.
+	if (!CallMethodRetStr(background_mod, "GetCurrentMapName", map_name, "")) {
 #ifdef _DEBUG
 		DEBUG_INFO_LEVEL_1("Error calling GetCurrentMap %s\n", map_name.c_str());
 #endif
-		Py_XDECREF(poArgs);
 		return false;
 	}
 	DEBUG_INFO_LEVEL_2("Setting collision map name=%s",map_name.c_str());
-	//printf("Setting Map Collision %s\n", map_name.c_str());
-	Py_XDECREF(poArgs);
 	if (currMap) {
 		if (map_name.compare(currMap->getMapName()) == 0)
 			return true;
@@ -67,11 +64,8 @@ std::string CBackground::currentMapName()
 	if (!background_mod)
 		return std::string();
 	std::string map_name;
-	PyObject* poArgs = Py_BuildValue("()");
-	// PyCallClassMemberFunc consumes poArgs (Py_XDECREFs it internally) -- do NOT decref again, that
-	// double-frees the empty-tuple singleton (this is called every frame -> fast GC-corruption crash).
-	bool ok = PyCallClassMemberFunc(background_mod, "GetCurrentMapName", poArgs, map_name);
-	if (!ok)
+	// self-contained call, no manual refcount (called every frame). See PythonUtils.h.
+	if (!CallMethodRetStr(background_mod, "GetCurrentMapName", map_name, ""))
 		return std::string();
 	return map_name;
 }

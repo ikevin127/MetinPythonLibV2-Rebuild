@@ -7,7 +7,10 @@
 
 #define OFFSET_CLIENT_INSTANCE_PTR_1 0x4
 #define OFFSET_CLIENT_INSTANCE_PTR_2 0x8
-#define OFFSET_CLIENT_CHARACTER_POS 0x7BC
+#define OFFSET_CLIENT_CHARACTER_POS 0x7C4   // 26.1.11: shifted +8 from 0x7BC (struct grew). Verified via CE:
+                                            // client's own getter reads instance+0x2F8+0x4CC = +0x7C4
+                                            // (x @+0x7C4, y @+0x7C8 negated, z @+0x7CC). Re-derive: disasm
+                                            // playerGetMainCharacterPosition -> its getter chain.
 
 //Private Shops Race 
 #define MIN_RACE_SHOP 30000
